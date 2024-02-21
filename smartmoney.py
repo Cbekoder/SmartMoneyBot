@@ -26,7 +26,6 @@ sent_users = set()
 # Command handlers
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
-    # Check if the user is admin
     is_admin = str(message.from_user.id) in admin_user_id
 
     if is_admin:
