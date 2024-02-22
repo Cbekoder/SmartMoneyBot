@@ -19,13 +19,16 @@ logging.basicConfig(level=logging.INFO)
 # Initialize bot and dispatcher
 bot = Bot(token=config["token"])
 dp = Dispatcher(bot)
-admin_user_id = config["admins"][0]
+admin_user_id = config["admins"][2]
 stored_messages = []
 sent_users = set()
+global signal_mode
+signal_mode = False
 
 # Command handlers
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
+    logging.info(message)
     is_admin = str(message.from_user.id) in admin_user_id
 
     if is_admin:
@@ -43,7 +46,7 @@ async def start(message: types.Message):
 
 @dp.message_handler(commands=["help"])
 async def help_command(message: types.Message):
-    is_admin = str(message.from_user.id) in config["admin_ids"]
+    is_admin = str(message.from_user.id) in config["admins"]
 
     if is_admin:
         await message.answer("Adminlar uchun quyidagi buyruqlar mavjud:\n"
@@ -58,155 +61,144 @@ async def help_command(message: types.Message):
                              )
 
 
-@dp.message_handler(commands=["add"])
-async def add_user(message: types.Message):
-    if str(message.from_user.id) in config["admin_ids"]:
-        try:
-            user_id = message.text.split()[1]
-            user_id = int(user_id)
-        except IndexError:
-            await message.answer("Please provide a user id.")
-            return
-        except ValueError:
-            await message.answer("Invalid user id.")
-            return
+@dp.message_handler(commands=["subscribe"])
+async def subscribe_command(message: types.Message):
+    is_admin = str(message.from_user.id) in config["admins"]
+    if is_admin:
+        await message.answer("Siz admin ekaningiz uchun obuna bo'lish mumkin emas.")
+    else:
+        user_id = message.from_user.id
+        user_name = message.from_user.full_name
+        user_username = message.from_user.username
+        user_photo = None
 
-        # Add user if not already in the list
         if user_id not in [int(user["id"]) for user in users]:
-            users.append({"id": user_id, "allowed": True})
+            photos = await bot.get_user_profile_photos(user_id=user_id, limit=1)
+            keyboard = types.InlineKeyboardMarkup()
+            keyboard.add(types.InlineKeyboardButton("Qo'shish", callback_data=f"add_{user_id}"))
+            keyboard.add(types.InlineKeyboardButton("Rad etish", callback_data=f"ignore_{user_id}"))
+            if photos.photos:
+                photo_file_id = photos.photos[0][-1].file_id
+                await bot.send_photo(chat_id=admin_user_id, photo=photo_file_id,
+                                     caption=f"Yangi foydalanuvchi:\n"
+                                            f"ID: {user_id}\n"
+                                            f"Ism: {user_name}\n"
+                                            f"Foydalanuvchi nomi: {user_username}\n"
+                                            "Bu foydalanuvchini qo'shishni hohlaysizmi?",
+                                     reply_markup=keyboard)
+            else:
+                await bot.send_message(chat_id=admin_user_id,
+                                       text=f"New user:\nID: {user_id}\nName: {user_name}\nUsername: {user_username}\n"
+                                            "Do you want to add this user?",
+                                       reply_markup=keyboard)
+            await message.answer("Adminga obuna bo'lish so'rovi yuborildi. Kutishda qoling!")
+        else:
+            await message.answer("Siz allaqachon obunachilar ro'yxatida borsiz.")
+
+@dp.callback_query_handler(lambda query: query.data.startswith(("add", "ignore")))
+async def handle_subscription_action(callback_query: types.CallbackQuery):
+    action, user_id = callback_query.data.split("_")
+    user_id = int(user_id)
+    if action == "add":
+        if user_id not in [int(user["id"]) for user in users]:
+            users.append({"id": user_id})
             with open("users.json", "w") as file:
                 json.dump(users, file)
-            await message.answer(f"User {user_id} added.")
+            await bot.send_message(chat_id=user_id, text="Siz admin tomonidan tasdiqlandingiz.\n Endi signallarni qabul qilib olasiz.")
         else:
-            await message.answer(f"User {user_id} is already in the list.")
-    else:
-        await message.answer("You are not authorized to use this command.")
+            await bot.send_message(chat_id=user_id,
+                                   text="")
+    elif action == "ignore":
+        await bot.send_message(chat_id=user_id,
+                               text="Siz admin tomonidan rad etildingiz.\n Iltimos adminga murojaat qiling.\nadmin: @SMART_MONE_ADMIN")
+        await callback_query.answer("Foydalanuvchi ignore qilingan.")
 
+    await bot.delete_message(callback_query.message.chat.id, callback_query.message.message_id)
 
-@dp.message_handler(commands=["ignore"])
-async def ignore_user(message: types.Message):
-    # Check if the user is admin
-    if str(message.from_user.id) in config["admin_ids"]:
-        # Get user_id to ignore
-        try:
-            user_id = message.text.split()[1]
-            user_id = int(user_id)
-        except IndexError:
-            await message.answer("Please provide a user id.")
-            return
-        except ValueError:
-            await message.answer("Invalid user id.")
-            return
-
-        # Ignore user if in the list
-        for user in users:
-            if user["id"] == user_id:
-                user["allowed"] = False
-                with open("users.json", "w") as file:
-                    json.dump(users, file)
-                await message.answer(f"User {user_id} ignored.")
-                return
-
-        await message.answer(f"User {user_id} is not in the list.")
-    else:
-        await message.answer("You are not authorized to use this command.")
-
-@dp.message_handler(content_types=["photo"])
-async def handle_photo(message: types.Message):
-    # Check if the user is admin
-    is_admin = str(message.from_user.id) in config["admin_ids"]
-
-    if is_admin:
-        await message.answer("This is a photo sent by an admin.")
-        logging.info(message)
-        return
-
-    # Get user info
-    user_info = f"{message.from_user.id}\n" \
-                f"{message.from_user.full_name}\n" \
-                f"@{message.from_user.username}"
-
-    # Create inline keyboard
-    keyboard = types.InlineKeyboardMarkup()
-    add_button = types.InlineKeyboardButton(text="Add", callback_data="add")
-    ignore_button = types.InlineKeyboardButton(text="Ignore", callback_data="ignore")
-    keyboard.add(add_button, ignore_button)
-
-    # Send message to admin
-    admin_message = await message.answer_photo(photo=message.photo[-1].file_id,
-                                               caption=f"New user photo\n"
-                                                       f"Comment: {message.caption}\n"
-                                                       f"{user_info}",
-                                               reply_markup=keyboard)
-    await bot.send_message(config["admin_ids"][0], f"New user found: {message.from_user.full_name}")
-
-    # Notify the user
-    await message.answer("Your request is pending approval.")
-
-
-@dp.message_handler(commands=['signal'], user_id=admin_user_id)
+@dp.message_handler(commands=['signal'])
 async def handle_signal_command(message: types.Message):
+    is_admin = str(message.from_user.id) in config["admins"]
     global signal_mode
-    signal_mode = True
-    await message.answer("Please send any messages to send to subscribers or tap /send to finish.")
+    if is_admin:
+        signal_mode = True
+        await message.answer("Obunachilarga yubormoqchi bo'lgan habarlaringizni joylang va /send buyrug'i yordamida ularni  yuboring.")
+    else:
+        await message.answer("Bunday buyruq mavjud emas.")
 
 @dp.message_handler(commands=['send'], user_id=admin_user_id)
 async def handle_send_command(message: types.Message):
     global signal_mode
     if signal_mode:
         signal_mode = False
-        await message.answer("Your messages have been sent to subscribers.")
-        # Send all stored messages to allowed users
+        await message.answer("Habarlaringiz yuborildi!")
         for stored_message in stored_messages:
             for user in [int(user["id"]) for user in users]:
-                user_id = user
                 # Check if the message has been sent to this user before
-                if user_id not in sent_users:
+                if user not in sent_users:
                     try:
-                        await bot.send_message(user_id, stored_message)
-                        logging.info(f"Message forwarded to user {user_id}")
-                        sent_users.add(user_id)  # Add the user ID to sent_users set
+                        content = stored_message.text or stored_message.caption or ''
+                        media = stored_message.photo or None
+                        if media:
+                            await bot.send_photo(user, photo=media[-1]['file_id'], caption=content)
+                        elif content:
+                            await bot.send_message(user, content)
+                        logging.info(f"Message forwarded to user {user}")
+                        sent_users.add(user)  # Add the user ID to sent_users set
                     except Exception as e:
-                        logging.error(f"Failed to forward message to user {user_id}: {e}")
+                        logging.error(f"Failed to forward message to user {user}: {e}")
             sent_users.clear()
         stored_messages.clear()
     else:
-        await message.answer("You haven't initiated the signal mode yet.")
+        await message.answer("/send buyrug'idan foydalanishdan avval /signal buyqug'i yordamida habarlaringizni yuroring.")
 
 
-@dp.message_handler(user_id=admin_user_id)
+@dp.message_handler(content_types=['text'])
 async def handle_admin_message(message: types.Message):
-    if signal_mode:
-        stored_messages.append(message)
-        logging.info(message)
-        await message.answer("Message received. Please send another message or tap /send to finish.")
+    is_admin = str(message.from_user.id) in config["admins"]
+    if is_admin:
+        if signal_mode:
+            stored_messages.append(message)
+            await message.answer("Xabar qabul qilindi. Iltimos, boshqa xabar yuboring yoki tugatish uchun /send buyrug'idan foydalaning.")
+        else:
+            await message.answer("Signal yuborish uchun /signal buyrug'idan foydalaning.")
+
+
+@dp.message_handler(content_types=["photo"])
+async def handle_photo(message: types.Message):
+    is_admin = str(message.from_user.id) in config["admins"]
+    if is_admin:
+        if signal_mode:
+            stored_messages.append(message)
+            await message.answer("Xabar qabul qilindi. Iltimos, boshqa xabar yuboring yoki tugatish uchun /send buyrug'idan foydalaning.")
+            logging.info(message)
+        else:
+            await message.answer("Signal yuborish uchun /signal buyrug'idan foydalaning.")
     else:
-        await message.answer("Please use /signal command to initiate the message sending process.")
+        await message.answer("Siz rasm yubora olmaysiz.")
 
-# Inline keyboard handler
-@dp.callback_query_handler(lambda c: c.data in ["add", "ignore"])
-async def process_callback(callback_query: types.CallbackQuery):
-    # Check if the user is admin
-    is_admin = str(callback_query.from_user.id) in config["admin_ids"]
-
-    if not is_admin:
-        await callback_query.answer("You are not authorized to use this command.", show_alert=True)
-        return
-
-    # Delete original message
-    await callback_query.message.delete()
-
-    # Respond to the button click
-    if callback_query.data == "add":
-        await callback_query.message.answer("User is added.")
-    elif callback_query.data == "ignore":
-        await callback_query.message.answer("User is ignored.")
-
-
-async def on_startup(dp):
-    await bot.send_message(config["admin_ids"][0], "Bot started.")
+    # Get user info
+    # user_info = f"{message.from_user.id}\n" \
+    #             f"{message.from_user.full_name}\n" \
+    #             f"@{message.from_user.username}"
+    #
+    # # Create inline keyboard
+    # keyboard = types.InlineKeyboardMarkup()
+    # add_button = types.InlineKeyboardButton(text="Add", callback_data="add")
+    # ignore_button = types.InlineKeyboardButton(text="Ignore", callback_data="ignore")
+    # keyboard.add(add_button, ignore_button)
+    #
+    # # Send message to admin
+    # admin_message = await message.answer_photo(photo=message.photo[-1].file_id,
+    #                                            caption=f"New user photo\n"
+    #                                                    f"Comment: {message.caption}\n"
+    #                                                    f"{user_info}",
+    #                                            reply_markup=keyboard)
+    # await bot.send_message(config["admins"][0], f"New user found: {message.from_user.full_name}")
+    #
+    # # Notify the user
+    # await message.answer("Your request is pending approval.")
 
 
 if __name__ == "__main__":
-    # Start the bot
     executor.start_polling(dp, skip_updates=True)
+
