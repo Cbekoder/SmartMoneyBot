@@ -29,20 +29,38 @@ async def start(message: types.Message):
     is_admin = str(message.from_user.id) in admin_user_id
 
     if is_admin:
-        await message.answer("Hello Admin! Here are the bot functions:\n"
-                             "/add - Add a user\n"
-                             "/ignore - Ignore a user\n"
-                             "/help - Show this help message")
+        await message.answer(f"Salom {message.from_user.first_name}!\n\n"
+                             "Sizda admin sifatida belgilangansiz."
+                             "Foydalanish qo'llanmasini olish uchun\n"
+                             "/help buyrug'idan foydalaning"
+                             )
     else:
-        await message.answer("Hello! This is a bot.\n"
-                             "You can't do anything. Only admins have control.")
+        await message.answer(f"Salom {message.from_user.first_name}.\n\n"
+                             "Bu Smart Money kanali yordamchi boti.\n"
+                             "Foydalanish qo'llanmasini olish uchun\n"
+                             "/help buyrug'idan foydalaning"
+                             )
+
+@dp.message_handler(commands=["help"])
+async def help_command(message: types.Message):
+    is_admin = str(message.from_user.id) in config["admin_ids"]
+
+    if is_admin:
+        await message.answer("Adminlar uchun quyidagi buyruqlar mavjud:\n"
+                             "/signal - signallar qabul qilish\n"
+                             "/send - signallarni yuborish\n"
+                             )
+    else:
+        await message.answer("Bu botdan foydalanish va signallar qabul qila olishingiz uchun sizdan obuna bo'lish talab qilinadi.\n"
+                             "Obuna bo'lish uchun adminga murojat qiling\n"
+                             "admin: @SMART_MONE_ADMIN\n"
+                             "va /subscribe buyrug'ini yuboring"
+                             )
 
 
 @dp.message_handler(commands=["add"])
 async def add_user(message: types.Message):
-    # Check if the user is admin
     if str(message.from_user.id) in config["admin_ids"]:
-        # Get user_id to add
         try:
             user_id = message.text.split()[1]
             user_id = int(user_id)
@@ -93,22 +111,6 @@ async def ignore_user(message: types.Message):
     else:
         await message.answer("You are not authorized to use this command.")
 
-
-@dp.message_handler(commands=["help"])
-async def help_command(message: types.Message):
-    # Check if the user is admin
-    is_admin = str(message.from_user.id) in config["admin_ids"]
-
-    if is_admin:
-        await message.answer("Hello Admin! Here are the bot functions:\n"
-                             "/add - Add a user\n"
-                             "/ignore - Ignore a user\n"
-                             "/help - Show this help message")
-    else:
-        await message.answer("Hello! This is a bot.\n"
-                             "You can't do anything. Only admins have control.")
-
-
 @dp.message_handler(content_types=["photo"])
 async def handle_photo(message: types.Message):
     # Check if the user is admin
@@ -116,9 +118,6 @@ async def handle_photo(message: types.Message):
 
     if is_admin:
         await message.answer("This is a photo sent by an admin.")
-        with open("test.json", "w") as file:
-            file.write(str(message))
-        file.close()
         logging.info(message)
         return
 
