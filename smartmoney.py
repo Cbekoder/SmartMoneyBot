@@ -125,31 +125,35 @@ async def handle_signal_command(message: types.Message):
     else:
         await message.answer("Bunday buyruq mavjud emas.")
 
-@dp.message_handler(commands=['send'], user_id=admin_user_id)
+@dp.message_handler(commands=['send'])
 async def handle_send_command(message: types.Message):
+    is_admin = str(message.from_user.id) in config["admins"]
     global signal_mode
-    if signal_mode:
-        signal_mode = False
-        await message.answer("Habarlaringiz yuborildi!")
-        for stored_message in stored_messages:
-            for user in [int(user["id"]) for user in users]:
-                # Check if the message has been sent to this user before
-                if user not in sent_users:
-                    try:
-                        content = stored_message.text or stored_message.caption or ''
-                        media = stored_message.photo or None
-                        if media:
-                            await bot.send_photo(user, photo=media[-1]['file_id'], caption=content)
-                        elif content:
-                            await bot.send_message(user, content)
-                        logging.info(f"Message forwarded to user {user}")
-                        sent_users.add(user)  # Add the user ID to sent_users set
-                    except Exception as e:
-                        logging.error(f"Failed to forward message to user {user}: {e}")
-            sent_users.clear()
-        stored_messages.clear()
+    if is_admin:
+        if signal_mode:
+            signal_mode = False
+            await message.answer("Habarlaringiz yuborildi!")
+            for stored_message in stored_messages:
+                for user in [int(user["id"]) for user in users]:
+                    # Check if the message has been sent to this user before
+                    if user not in sent_users:
+                        try:
+                            content = stored_message.text or stored_message.caption or ''
+                            media = stored_message.photo or None
+                            if media:
+                                await bot.send_photo(user, photo=media[-1]['file_id'], caption=content)
+                            elif content:
+                                await bot.send_message(user, content)
+                            logging.info(f"Message forwarded to user {user}")
+                            sent_users.add(user)  # Add the user ID to sent_users set
+                        except Exception as e:
+                            logging.error(f"Failed to forward message to user {user}: {e}")
+                sent_users.clear()
+            stored_messages.clear()
+        else:
+            await message.answer("/send buyrug'idan foydalanishdan avval /signal buyqug'i yordamida habarlaringizni yuroring.")
     else:
-        await message.answer("/send buyrug'idan foydalanishdan avval /signal buyqug'i yordamida habarlaringizni yuroring.")
+        await message.answer("Bunday buyruq mavjud emas.")
 
 
 @dp.message_handler(content_types=['text'])
@@ -175,28 +179,6 @@ async def handle_photo(message: types.Message):
             await message.answer("Signal yuborish uchun /signal buyrug'idan foydalaning.")
     else:
         await message.answer("Siz rasm yubora olmaysiz.")
-
-    # Get user info
-    # user_info = f"{message.from_user.id}\n" \
-    #             f"{message.from_user.full_name}\n" \
-    #             f"@{message.from_user.username}"
-    #
-    # # Create inline keyboard
-    # keyboard = types.InlineKeyboardMarkup()
-    # add_button = types.InlineKeyboardButton(text="Add", callback_data="add")
-    # ignore_button = types.InlineKeyboardButton(text="Ignore", callback_data="ignore")
-    # keyboard.add(add_button, ignore_button)
-    #
-    # # Send message to admin
-    # admin_message = await message.answer_photo(photo=message.photo[-1].file_id,
-    #                                            caption=f"New user photo\n"
-    #                                                    f"Comment: {message.caption}\n"
-    #                                                    f"{user_info}",
-    #                                            reply_markup=keyboard)
-    # await bot.send_message(config["admins"][0], f"New user found: {message.from_user.full_name}")
-    #
-    # # Notify the user
-    # await message.answer("Your request is pending approval.")
 
 
 if __name__ == "__main__":
